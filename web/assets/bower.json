@@ -1,0 +1,20 @@
+{
+  "name": "geoberlin-server demo app",
+  "authors": [
+    "ffalt <ffalty@gmail.com>"
+  ],
+  "description": "Geoberlin Berlin Geocoder, DemoApp",
+  "main": "",
+  "moduleType": [],
+  "license": "MIT",
+  "homepage": "",
+  "private": true,
+  "dependencies": {
+    "leaflet": "~0.7.7",
+    "chroma-js": "~1.1.1",
+    "angular": "~1.4.7",
+    "angular-resource": "~1.4.7",
+    "Leaflet.tooltip": "https://github.com/aratcliffe/Leaflet.tooltip.git",
+    "geoberlin-client": "https://github.com/ffalt/geoberlin-client.git"
+  }
+}

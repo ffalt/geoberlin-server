@@ -1,0 +1,10 @@
+var settings = {
+	map: {
+		url: 'YOUR_TILES_URL goes here',
+		attribution: 'YOUR_TILES_ATTRIBUTION goes here'
+	},
+	api: {
+		key: 'YOUR_APIKEY goes here',
+		url: 'api/berlin/v1'
+	}
+};

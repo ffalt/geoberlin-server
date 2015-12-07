@@ -1,0 +1,16 @@
+module.exports = {
+	listen: {
+		host: 'localhost',
+		port: 3000
+	},
+	datapath: './data',
+	elasticsearch: {
+		config: {
+			host: 'localhost:9200'
+			//,log: 'debug'
+		},
+		index: 'geoberlin'
+	},
+	apipath: '/api/berlin/v1/',
+	demo: '../web'
+};

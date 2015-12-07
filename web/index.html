@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="de" ng-app="App">
+<head>
+	<meta charset="UTF-8">
+	<title>Geoberlin - Berlin Geocoder</title>
+	<link rel="stylesheet" href="assets/bower_components/leaflet/dist/leaflet.css"/>
+	<link rel="stylesheet" href="assets/bower_components/geoberlin-client/css/leaflet-geocoder-ui.css"/>
+	<link rel="stylesheet" href="assets/css/style.css"/>
+	<script src="assets/bower_components/leaflet/dist/leaflet.js"></script>
+	<script src="assets/bower_components/angular/angular.min.js"></script>
+	<script src="assets/bower_components/geoberlin-client/js/leaflet-geocoder-ui.js"></script>
+	<script src="assets/bower_components/geoberlin-client/js/geocoder-geoberlin.js"></script>
+	<script src="assets/js/config.js"></script>
+	<script src="assets/js/app.js"></script>
+</head>
+<body ng-controller="AppController">
+<div class="view">
+	<div id="map"></div>
+</div>
+<div id="sidebar">
+	<div ng-repeat="feature in features">
+		<pre>{{feature.properties | json}}</pre>
+	</div>
+</div>
+</body>
+</html>

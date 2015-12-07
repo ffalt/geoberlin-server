@@ -1,0 +1,15 @@
+{
+  "name": "geoberlin-server",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node ./server.js"
+  },
+  "dependencies": {
+    "async": "^1.5.0",
+    "body-parser": "^1.14.1",
+    "elasticsearch": "^10.0.0",
+    "express": "~4.13.1",
+    "node-status": "^0.1.6"
+  }
+}

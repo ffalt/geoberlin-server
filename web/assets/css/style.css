@@ -1,0 +1,54 @@
+* {
+	margin: 0;
+	padding: 0;
+	-webkit-box-sizing: border-box;
+	-moz-box-sizing: border-box;
+	box-sizing: border-box;
+}
+
+body, html {
+	height: 100%;
+}
+
+body {
+	color: #333;
+	font-family: sans-serif;
+}
+
+.view {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	right: 400px;
+}
+
+#sidebar {
+	border: 1px solid #686868;
+	position: absolute;
+	max-width: 400px;
+	width: 400px;
+	top: 0;
+	bottom: 0;
+	right: 0;
+	padding: 10px;
+	overflow: auto;
+	font-size: 0.9em;
+}
+
+#map {
+	background: white;
+	height: 100%;
+	width: 100%;
+}
+
+#sidebar span {
+	word-wrap: break-word;
+	font-size: 0.8em;
+	margin-top: 8px;
+	display: block;
+}
+
+#sidebar h3 {
+	float:right;
+}
