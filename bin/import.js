@@ -21,13 +21,16 @@ var parse = function (cb) {
 	console.log('[loading file]', datafile);
 	var buffer = fs.readFileSync(datafile);
 	console.log('[unpacking]', datafile);
+	var ids = {};
 	zlib.unzip(buffer, function (err, buffer) {
 		if (err) return cb(err);
 		console.log('[import data]');
 		var tsv = buffer.toString().split('\n');
-		var total = status.addItem('total', {max: tsv.length, color: 'cyan'});
-		var entries = status.addItem('entries', {type: ['bar', 'percentage'], max: tsv.length});
-		var err_count = status.addItem('err', {color: 'red', label: 'errors'});
+		var status_total = status.addItem('total', {type: ['bar', 'percentage'], max: tsv.length});
+		var status_entries = status.addItem('entries', {color: 'cyan', label: 'rejected'});
+		var status_dups = status.addItem('dups', {color: 'yellow', label: 'rejected'});
+		var status_rejected = status.addItem('rejected', {color: 'yellow', label: 'rejected'});
+		var status_errors = status.addItem('errors', {color: 'red', label: 'errors'});
 		if (showstatus) {
 			status.start({invert: false});
 		}
@@ -35,10 +38,11 @@ var parse = function (cb) {
 		var bulkInsert = function (list, cb) {
 			geoberlin.store(list, function (err) {
 				if (err) {
-					err_count.inc(list.length);
+					status_errors.inc();
+					status_rejected.inc(list.length);
 					console.error(err);
 				} else {
-					entries.inc(list.length);
+					status_entries.inc(list.length);
 				}
 				cb();
 			});
@@ -46,7 +50,7 @@ var parse = function (cb) {
 
 		var bulk = [];
 		async.forEachSeries(tsv, function (row, then) {
-			total.inc();
+			status_total.inc();
 			var cols = row.split('\t');
 			var o = {};
 			tsv_head.forEach(function (col, i) {
@@ -63,8 +67,19 @@ var parse = function (cb) {
 			if (isNaN(o.location.lat) || isNaN(o.location.lon)) {
 				o.location = null;
 			}
+
+			if (!o.name) {
+				status_rejected.inc();
+				return then();
+			}
+
+			if (ids[o.strnr + '-' + o.hausnr]) {
+				status_dups.inc();
+				return then();
+			} else ids[o.strnr + '-' + o.hausnr] = true;
+
 			bulk.push(o);
-			if (bulk.length > 999) {
+			if (bulk.length > 1999) {
 				bulkInsert(bulk, function () {
 					bulk = [];
 					then();
