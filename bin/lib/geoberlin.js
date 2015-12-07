@@ -42,7 +42,10 @@ function GeoBerlin(config) {
 				query: q,
 				aggs: {
 					names: {
-						terms: {field: 'strnr'},
+						terms: {
+							field: 'strnr',
+							size: 10
+						},
 						'aggs': {
 							top_names_hits: {
 								top_hits: {
@@ -252,6 +255,46 @@ function GeoBerlin(config) {
 			cb(null, packageResults(query, result));
 		}, function (err) {
 			console.trace(err);
+			cb(err);
+		});
+	};
+
+	me.findSpecialStreets = function (cb) {
+		client.search({
+			index: 'geoberlin',
+			type: 'address',
+			_source: ['name', 'hausnr'],
+			body: {
+				query: {
+					regexp: {
+						name: '.*[0-9].*'
+					}
+				},
+				aggs: {
+					names: {
+						terms: {
+							field: 'strnr',
+							size: 10000
+						},
+						'aggs': {
+							top_names_hits: {
+								top_hits: {
+									'_source': {'include': ['strnr', 'name']},
+									'size': 1
+								}
+							}
+						}
+					}
+				}
+			}
+		}).then(function (resp) {
+			var result = resp.aggregations.names.buckets.map(function (b) {
+				return b.top_names_hits.hits.hits.map(function (h) {
+					return h._source.name;
+				})[0];
+			});
+			cb(null, result);
+		}, function (err) {
 			cb(err);
 		});
 	};
