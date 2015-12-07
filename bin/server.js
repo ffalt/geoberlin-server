@@ -40,7 +40,7 @@ app.get(config.apipath + 'search', function (req, res) {
 	processrequest(req, res, geoberlin.autocomplete);
 });
 app.get(config.apipath + 'near', function (req, res) {
-	processrequest(req, res, geoberlin.findnear);
+	processrequest(req, res, geoberlin.findNear);
 });
 app.get(config.apipath + 'get', function (req, res) {
 	processrequest(req, res, geoberlin.get);

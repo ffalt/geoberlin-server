@@ -65,7 +65,9 @@ var parse = function (cb) {
 				}
 			});
 			if (isNaN(o.location.lat) || isNaN(o.location.lon)) {
-				o.location = null;
+				status_rejected.inc();
+				return then();
+				//o.location = null;
 			}
 
 			if (!o.name) {
@@ -77,6 +79,16 @@ var parse = function (cb) {
 				status_dups.inc();
 				return then();
 			} else ids[o.strnr + '-' + o.hausnr] = true;
+
+			o.slug = geoberlin.slugify(o.name);
+
+			if (isNaN(o.hausnr)) {
+				var n = o.hausnr.match(/\d*/)[0];
+				o.hausnr_nr = parseInt(n);
+				o.hausnr_suffix = o.hausnr.slice(n.length);
+			} else {
+				o.hausnr_nr = parseInt(o.hausnr);
+			}
 
 			bulk.push(o);
 			if (bulk.length > 1999) {

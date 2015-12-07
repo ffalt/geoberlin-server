@@ -1,5 +1,6 @@
 var async = require('async');
 var path = require('path');
+var debug = require('debug')('geoberlin:coder');
 var elasticsearch = require('elasticsearch');
 
 function GeoBerlin(config) {
@@ -7,16 +8,22 @@ function GeoBerlin(config) {
 	var client = new elasticsearch.Client(config.elasticsearch.config);
 
 	var searchStreet = function (query, cb) {
-
 		var queries = [];
-		queries.push({
-			//prefix: {name: query.text} //https://www.elastic.co/guide/en/elasticsearch/guide/current/prefix-query.html
-			//fuzzy: {name: query.text} // https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html
-			//term: {name: query.text} // https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-term-query.html
-			//wildcard: {name: query.text + '*'}
-			match_phrase_prefix: {name: query.strasse} //https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html
-			//match: {name: query.text} //https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html
-		});
+		if (query.strasse) {
+			queries.push({
+				//prefix: {name: query.text} //https://www.elastic.co/guide/en/elasticsearch/guide/current/prefix-query.html
+				//fuzzy: {name: query.text} // https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-fuzzy-query.html
+				//term: {name: query.text} // https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-term-query.html
+				//wildcard: {name: query.text + '*'}
+				match_phrase_prefix: {name: query.strasse} //https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html
+				//match: {name: query.text} //https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html
+			});
+		}
+		if (query.slug) {
+			queries.push({
+				match_phrase_prefix: {slug: query.slug}
+			});
+		}
 		if (query.hausnr) {
 			queries.push({
 				match_phrase_prefix: {hausnr: query.hausnr}
@@ -35,21 +42,22 @@ function GeoBerlin(config) {
 		var q = queries.length === 1 ? queries[0] : {bool: {must: queries}};
 
 		client.search({
-			index: 'geoberlin',
+			index: config.elasticsearch.index,
 			type: 'address',
 			fields: ['name', 'plz'],
+			size: 100,
 			body: {
 				query: q,
 				aggs: {
 					names: {
 						terms: {
 							field: 'strnr',
-							size: 10
+							size: 100
 						},
 						'aggs': {
 							top_names_hits: {
 								top_hits: {
-									'_source': {'include': ['strnr', 'name', 'bezirk_name', 'location']},
+									'_source': {'include': ['strnr', 'slug', 'name', 'bezirk_name', 'location']},
 									'size': 1
 								}
 							}
@@ -65,6 +73,7 @@ function GeoBerlin(config) {
 						'properties': {
 							'id': h._source.strnr,
 							'layer': 'street',
+							'slug': h._source.slug,
 							'name': h._source.name,
 							'country_a': 'DEU',
 							'country': 'Deutschland',
@@ -78,6 +87,12 @@ function GeoBerlin(config) {
 					};
 					return feature;
 				})[0];
+				//debug('[search street]', query, result.length);
+			});
+			result.sort(function (a, b) {
+				if (a.properties.name < b.properties.name) return -1;
+				if (a.properties.name > b.properties.name) return 1;
+				return 0;
 			});
 			cb(null, result);
 		}, function (err) {
@@ -101,12 +116,12 @@ function GeoBerlin(config) {
 		}
 		var q = queries.length === 1 ? queries[0] : {bool: {must: queries}};
 		client.search({
-			index: 'geoberlin',
+			index: config.elasticsearch.index,
 			type: 'address',
 			size: 50,
 			_source: ['name', 'plz', 'hausnr', 'strnr', 'location.*', 'bezirk_name'],
 			body: {
-				sort: ['hausnr'],
+				sort: ['hausnr_nr', 'hausnr_suffix'],
 				query: q
 			}
 		}).then(function (resp) {
@@ -138,7 +153,18 @@ function GeoBerlin(config) {
 		});
 	};
 
-	var analyzeQuery = function (text) {
+	var analyzeQuery = function (text, cb) {
+
+		if (!me.special_streets) {
+			return me.findSpecialStreets(function (err, streets) {
+				if (err) return cb(err);
+				me.special_streets = streets.map(function (s) {
+					return s.toLowerCase();
+				});
+				analyzeQuery(text, cb);
+			});
+		}
+
 		var parts = text.split(',');
 		var front = parts[0];
 		var back;
@@ -149,7 +175,15 @@ function GeoBerlin(config) {
 			return s.length > 0;
 		});
 		var last = '';
-		p.forEach(function (part) {
+
+		var isSpecialStreetWithNr = function (text_with_nr) {
+			for (var i = 0; i < me.special_streets.length; i++) {
+				if (me.special_streets[i].indexOf(text_with_nr) === 0) return true;
+			}
+			return false;
+		};
+
+		p.forEach(function (part, i) {
 			if (isNaN(part)) {
 				if (last === 'hausnr' && part.length === 1) {
 					//space zwischen einer hausnr und dem buchstaben einer hausnummer z.b. '13 a'
@@ -178,9 +212,15 @@ function GeoBerlin(config) {
 					result.plz = result.plz || part;
 					last = 'plz';
 				} else {
-					//hausnummer, nachfolgende zahlen werden ignoriert
-					result.hausnr = result.hausnr || part;
-					last = 'hausnr';
+					//gehört die zahl zum straßenname ?
+					if (result.hausnr === undefined && (i === 1) && isSpecialStreetWithNr((p[i - 1] + ' ' + part).toLowerCase())) {
+						result.strasse = ((result.strasse || '') + ' ' + part).trim();
+						last = 'strasse';
+					} else {
+						//hausnummer, nachfolgende zahlen werden ignoriert
+						result.hausnr = result.hausnr || part;
+						last = 'hausnr';
+					}
 				}
 			}
 		});
@@ -200,13 +240,14 @@ function GeoBerlin(config) {
 			});
 		}
 
-		return result;
+		cb(null, result);
 	};
 
-	var packageResults = function (query, list) {
+	var packageResults = function (query, list, parsed) {
 		var result = {
 			'geocoding': {
 				'version': '0.1',
+				'parsed': parsed,
 				'engine': {'name': 'GeoBerlin', 'author': 'DSST', 'version': '1.0'},
 				'timestamp': (new Date()).valueOf()
 			},
@@ -215,9 +256,13 @@ function GeoBerlin(config) {
 		return result;
 	};
 
+	me.slugify = function (streetname) {
+		return streetname.replace(/[-\. ]/g, '').replace(/ß/g, 'ss').toLowerCase();
+	};
+
 	me.get = function (query, cb) {
 		client.search({
-			index: 'geoberlin',
+			index: config.elasticsearch.index,
 			type: 'address',
 			body: {
 				query: {
@@ -261,7 +306,7 @@ function GeoBerlin(config) {
 
 	me.findSpecialStreets = function (cb) {
 		client.search({
-			index: 'geoberlin',
+			index: config.elasticsearch.index,
 			type: 'address',
 			_source: ['name', 'hausnr'],
 			body: {
@@ -273,7 +318,7 @@ function GeoBerlin(config) {
 				aggs: {
 					names: {
 						terms: {
-							field: 'strnr',
+							field: 'name',
 							size: 10000
 						},
 						'aggs': {
@@ -299,7 +344,7 @@ function GeoBerlin(config) {
 		});
 	};
 
-	me.findnear = function (query, cb) {
+	me.findNear = function (query, cb) {
 		function estimateDistanceInMeter(lat1, lon1, lat2, lon2) {
 			var p = 0.017453292519943295;    // Math.PI / 180
 			var c = Math.cos;
@@ -312,7 +357,7 @@ function GeoBerlin(config) {
 		var lat = parseFloat(query.lat);
 		var lon = parseFloat(query.lon);
 		client.search({
-			index: 'geoberlin',
+			index: config.elasticsearch.index,
 			type: 'address',
 			size: 50,
 			_source: ['name', 'plz', 'hausnr', 'strnr', 'location.*', 'bezirk_name'],
@@ -369,55 +414,67 @@ function GeoBerlin(config) {
 	};
 
 	me.autocomplete = function (query, cb) {
+		analyzeQuery(query.text, function (err, parts) {
+			if (err) return cb(err);
 
-		var parts = analyzeQuery(query.text);
+			if (!parts.strasse) return cb(null, []);
 
-		if (!parts.strasse) return cb('Invalid Search');
+			parts.slug = me.slugify(parts.strasse);
 
-		var searches = [
-			['strasse', 'hausnr', 'plz', 'bezirk'],
-			['strasse', 'hausnr', 'bezirk'],
-			['strasse', 'hausnr', 'plz'],
-			['strasse', 'hausnr'],
-			['strasse', 'plz'],
-			['strasse']
-		];
+			var searches = [
+				['slug', 'hausnr', 'plz', 'bezirk'],
+				['slug', 'hausnr', 'bezirk'],
+				['slug', 'hausnr', 'plz'],
+				['slug', 'hausnr'],
+				['slug', 'plz'],
+				['slug']
+			];
 
-		//filter out not available searches
-		searches = searches.filter(function (search) {
-			for (var i = 0; i < search.length; i++) {
-				if (!parts[search[i]]) return false;
-			}
-			return true;
-		});
-
-		//process searches, exit if one matches
-		async.forEachSeries(searches, function (search, then) {
-			//copy parameters of this search
-			var q = {};
-			search.forEach(function (s) {
-				q[s] = parts[s];
-			});
-			//let's go! search!
-			searchStreet(q, function (err, results) {
-				if (err) return cb(err);
-				if (results.length === 0) {
-					//no results, try next
-					return then();
+			//filter out not available searches
+			searches = searches.filter(function (search) {
+				for (var i = 0; i < search.length; i++) {
+					if (!parts[search[i]]) return false;
 				}
-				if (results && results.length === 1) {
-					//one street found, let's get housenumbers
-					parts.strnr = results[0].properties.id;
-					return listStreet(parts, function (err, results) {
-						if (err) return cb(err);
-						cb(null, packageResults(query, results));
-					});
-				}
-				cb(null, packageResults(query, results));
+				return true;
 			});
-		}, function () {
-			//'all searches failed, nothing found'
-			cb(null, []);
+
+			//process searches, exit if one matches
+			async.forEachSeries(searches, function (search, then) {
+				//copy parameters of this search
+				var q = {};
+				search.forEach(function (s) {
+					q[s] = parts[s];
+				});
+				//let's go! search!
+				searchStreet(q, function (err, results) {
+					if (err) return cb(err);
+					if (results.length === 0) {
+						//no results, try next
+						return then();
+					}
+					if (results.length === 1) {
+						//one street found, let's get housenumbers
+						parts.strnr = results[0].properties.id;
+						return listStreet(parts, function (err, results) {
+							if (err) return cb(err);
+							cb(null, packageResults(query, results, parts));
+						});
+					}
+					if ((results[0].properties.slug === parts.slug) && parts.hausnr) {
+						//we have a winner (there may be other streets starting with the same slug, but we are already searching the house nr
+						parts.strnr = results[0].properties.id;
+						return listStreet(parts, function (err, results) {
+							if (err) return cb(err);
+							cb(null, packageResults(query, results, parts));
+						});
+					}
+					cb(null, packageResults(query, results, parts));
+				});
+			}, function () {
+				//'all searches failed, nothing found'
+				cb(null, []);
+			});
+
 		});
 	};
 
@@ -426,7 +483,7 @@ function GeoBerlin(config) {
 		if (Array.isArray(address)) {
 			var ops = [];
 			address.forEach(function (item, idx) {
-				ops.push({create: {_index: 'geoberlin', _type: 'address'}});
+				ops.push({create: {_index: config.elasticsearch.index, _type: 'address'}});
 				ops.push(item);
 			});
 
@@ -435,17 +492,14 @@ function GeoBerlin(config) {
 				ignore: [409]
 			}).then(function (resp) {
 				cb();
-			}, function (rejection) {
-				console.log(('>>> ' + (new Date()).toUTCString()));
-				console.log('' + JSON.stringify(rejection));
-				console.log('<<<');
-				cb('ElasticSearch rejected our bulk insert');
+			}, function (err) {
+				cb(err);
 			});
 
 		} else {
 			client.index({
 				type: 'address',
-				index: 'geoberlin',
+				index: config.elasticsearch.index,
 				body: address
 			}, cb);
 		}
@@ -456,6 +510,10 @@ function GeoBerlin(config) {
 			address: {
 				properties: {
 					name: {
+						'analyzer': 'analyzer_startswith',
+						'type': 'string'
+					},
+					slug: {
 						'analyzer': 'analyzer_startswith',
 						'type': 'string'
 					},
@@ -508,7 +566,7 @@ function GeoBerlin(config) {
 	};
 
 	var dropDD = function (cb) {
-		client.indices.delete({index: 'geoberlin'}, function (err, res) {
+		client.indices.delete({index: config.elasticsearch.index}, function (err, res) {
 			console.log('[delete index]', '\t', config.elasticsearch.index, err || '\t', res);
 			client.indices.create({index: config.elasticsearch.index}, function (err, res) {
 				console.log('[create index]', '\t', config.elasticsearch.index, err || '\t', res);

@@ -29,9 +29,10 @@ app.controller('AppController', function ($scope) {
 		fullWidth: false,
 		pointIcon: 'assets/bower_components/geoberlin-client/images/point_icon.png',
 		polygonIcon: 'assets/bower_components/geoberlin-client/images/polygon_icon.png',
-		onResults: function (features) {
+		onResults: function (features, header) {
 			$scope.$apply(function () {
 				$scope.features = features;
+				$scope.header = header;
 			});
 			return false;
 		},

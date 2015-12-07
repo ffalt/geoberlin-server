@@ -18,6 +18,10 @@
 	<div id="map"></div>
 </div>
 <div id="sidebar">
+	<div>
+		<pre ng-bind="header | json"></pre>
+	</div>
+
 	<div ng-repeat="feature in features">
 		<pre>{{feature.properties | json}}</pre>
 	</div>
