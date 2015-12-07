@@ -16,6 +16,7 @@ var tsv_head = ['strnr', 'hausnr', 'name', 'nummer', 'addresse', 'plz', 'bezirk_
 	'verkehrsteilflaeche', 'mittelbereich', 'prognoseraum_name', 'prognoseraum_nr', 'bezirksregion_name', 'bezirksregion_nr', 'planungsraum_name',
 	'planungsraum_nr', 'finanzamt_nr', 'finanzamt_addr', 'lon', 'lat', 'url'];
 
+
 var parse = function (cb) {
 	console.log('[loading file]', datafile);
 	var buffer = fs.readFileSync(datafile);
@@ -30,6 +31,20 @@ var parse = function (cb) {
 		if (showstatus) {
 			status.start({invert: false});
 		}
+
+		var bulkInsert = function (list, cb) {
+			geoberlin.store(list, function (err) {
+				if (err) {
+					err_count.inc(list.length);
+					console.error(err);
+				} else {
+					entries.inc(list.length);
+				}
+				cb();
+			});
+		};
+
+		var bulk = [];
 		async.forEachSeries(tsv, function (row, then) {
 			total.inc();
 			var cols = row.split('\t');
@@ -48,16 +63,24 @@ var parse = function (cb) {
 			if (isNaN(o.location.lat) || isNaN(o.location.lon)) {
 				o.location = null;
 			}
-			geoberlin.store(o, function (err) {
-				if (err) {
-					err_count.inc();
-					console.error(err);
-				} else {
-					entries.inc();
+			bulk.push(o);
+			if (bulk.length > 999) {
+				bulkInsert(bulk, function () {
+					bulk = [];
 					then();
-				}
-			});
-		}, cb);
+				});
+			} else {
+				then();
+			}
+		}, function () {
+			if (bulk.length > 0) {
+				bulkInsert(bulk, function () {
+					cb();
+				});
+			} else {
+				cb();
+			}
+		});
 	});
 };
 

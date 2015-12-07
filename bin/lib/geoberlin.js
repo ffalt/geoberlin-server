@@ -379,11 +379,33 @@ function GeoBerlin(config) {
 	};
 
 	me.store = function (address, cb) {
-		client.index({
-			type: 'address',
-			index: 'geoberlin',
-			body: address
-		}, cb);
+
+		if (Array.isArray(address)) {
+			var ops = [];
+			address.forEach(function (item, idx) {
+				ops.push({create: {_index: 'geoberlin', _type: 'address'}});
+				ops.push(item);
+			});
+
+			client.bulk({
+				body: ops,
+				ignore: [409]
+			}).then(function (resp) {
+				cb();
+			}, function (rejection) {
+				console.log(('>>> ' + (new Date()).toUTCString()));
+				console.log('' + JSON.stringify(rejection));
+				console.log('<<<');
+				cb('ElasticSearch rejected our bulk insert');
+			});
+
+		} else {
+			client.index({
+				type: 'address',
+				index: 'geoberlin',
+				body: address
+			}, cb);
+		}
 	};
 
 	var registerMapping = function (cb) {
