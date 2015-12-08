@@ -158,9 +158,7 @@ function GeoBerlin(config) {
 		if (!me.special_streets) {
 			return me.findSpecialStreets(function (err, streets) {
 				if (err) return cb(err);
-				me.special_streets = streets.map(function (s) {
-					return s.toLowerCase();
-				});
+				me.special_streets = streets.map(me.slugify);
 				analyzeQuery(text, cb);
 			});
 		}
@@ -177,6 +175,7 @@ function GeoBerlin(config) {
 		var last = '';
 
 		var isSpecialStreetWithNr = function (text_with_nr) {
+			text_with_nr = me.slugify(text_with_nr);
 			for (var i = 0; i < me.special_streets.length; i++) {
 				if (me.special_streets[i].indexOf(text_with_nr) === 0) return true;
 			}
@@ -213,7 +212,7 @@ function GeoBerlin(config) {
 					last = 'plz';
 				} else {
 					//gehört die zahl zum straßenname ?
-					if (result.hausnr === undefined && (i === 1) && isSpecialStreetWithNr((p[i - 1] + ' ' + part).toLowerCase())) {
+					if (result.hausnr === undefined && isSpecialStreetWithNr((p.slice(0, i).join(' ') + ' ' + part))) {
 						result.strasse = ((result.strasse || '') + ' ' + part).trim();
 						last = 'strasse';
 					} else {
@@ -417,7 +416,7 @@ function GeoBerlin(config) {
 		analyzeQuery(query.text, function (err, parts) {
 			if (err) return cb(err);
 
-			if (!parts.strasse) return cb(null, []);
+			if (!parts.strasse) return cb(null, packageResults(query, [], parts));
 
 			parts.slug = me.slugify(parts.strasse);
 
@@ -472,7 +471,7 @@ function GeoBerlin(config) {
 				});
 			}, function () {
 				//'all searches failed, nothing found'
-				cb(null, []);
+				cb(null, packageResults(query, [], parts));
 			});
 
 		});
