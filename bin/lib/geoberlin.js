@@ -118,7 +118,7 @@ function GeoBerlin(config) {
 		client.search({
 			index: config.elasticsearch.index,
 			type: 'address',
-			size: 50,
+			size: 80,
 			_source: ['name', 'plz', 'hausnr', 'strnr', 'location.*', 'bezirk_name'],
 			body: {
 				sort: ['hausnr_nr', 'hausnr_suffix'],
@@ -154,6 +154,8 @@ function GeoBerlin(config) {
 	};
 
 	var analyzeQuery = function (text, cb) {
+
+		if (!text || text.trim().length == 0) return cb(null, []);
 
 		if (!me.special_streets) {
 			return me.findSpecialStreets(function (err, streets) {
@@ -256,7 +258,12 @@ function GeoBerlin(config) {
 	};
 
 	me.slugify = function (streetname) {
-		return streetname.replace(/[-\. ]/g, '').replace(/ß/g, 'ss').toLowerCase();
+		return streetname.replace(/[-\. ,]/g, '')
+			.toLowerCase()
+			.replace(/ß/g, 'ss')
+			.replace(/ä/g, 'ae')
+			.replace(/ö/g, 'oe')
+			.replace(/ü/g, 'ue');
 	};
 
 	me.get = function (query, cb) {
@@ -416,9 +423,23 @@ function GeoBerlin(config) {
 		analyzeQuery(query.text, function (err, parts) {
 			if (err) return cb(err);
 
+			if (query.street) {
+				parts.strasse = query.street;
+			}
+
 			if (!parts.strasse) return cb(null, packageResults(query, [], parts));
 
 			parts.slug = me.slugify(parts.strasse);
+
+			if (query.housenr) {
+				parts.hausnr = query.housenr;
+			}
+			if (query.plz) {
+				parts.plz = query.plz;
+			}
+			if (query.region) {
+				parts.bezirk = query.region;
+			}
 
 			var searches = [
 				['slug', 'hausnr', 'plz', 'bezirk'],
@@ -459,13 +480,30 @@ function GeoBerlin(config) {
 							cb(null, packageResults(query, results, parts));
 						});
 					}
-					if ((results[0].properties.slug === parts.slug) && parts.hausnr) {
-						//we have a winner (there may be other streets starting with the same slug, but we are already searching the house nr
-						parts.strnr = results[0].properties.id;
-						return listStreet(parts, function (err, results) {
-							if (err) return cb(err);
-							cb(null, packageResults(query, results, parts));
+
+					if (parts.hausnr) {
+						var exactmatches = results.filter(function (r) {
+							return r.properties.slug === parts.slug;
 						});
+
+						if (exactmatches.length > 0) {
+							//we have exact winners (there may be other streets starting with the same slug, but we are already searching the house nr
+
+							var exactresults = [];
+							return async.forEachSeries(exactmatches, function (r, next) {
+									parts.strnr = r.properties.id;
+									listStreet(parts, function (err, results) {
+										if (err) return cb(err);
+										exactresults = exactresults.concat(results);
+										next();
+									});
+								},
+								function () {
+									delete parts.strnr;
+									cb(null, packageResults(query, exactresults, parts));
+								});
+
+						}
 					}
 					cb(null, packageResults(query, results, parts));
 				});
